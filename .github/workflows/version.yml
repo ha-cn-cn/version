@@ -70,6 +70,16 @@ jobs:
             return input_files.filter(value => signed_files.includes(value))
           }
 
+    - name: Modify JSON content
+      if: contains(steps.calc_file_list.outputs.changed_files, 'stable.json') || contains(steps.calc_file_list.outputs.changed_files, 'beta.json')
+      run: |
+        for file in stable.json beta.json; do
+          if [[ -f "$file" ]]; then
+            sed -i 's/os-artifacts.home-assistant.io/os-artifacts.smart-assistant.cn/g' "$file"
+            echo "Modified $file with new domain"
+          fi
+        done
+
   signing:
     name: Sign ${{ matrix.path }}
     needs: ["prepare"]
