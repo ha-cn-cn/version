@@ -43,6 +43,8 @@ jobs:
     steps:
     - name: Checkout the repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # 确保获取完整历史记录
 
     - name: Get changed files for push
       if: github.event_name == 'push'
@@ -70,36 +72,50 @@ jobs:
             return input_files.filter(value => signed_files.includes(value))
           }
 
-    - name: Modify JSON files if needed
+    - name: Debug print files
+      run: |
+        echo "Changed files: ${{ steps.calc_file_list.outputs.changed_files }}"
+        ls -la
+
+    - name: Modify JSON files
       id: modify_files
-      if: contains(steps.calc_file_list.outputs.changed_files, 'stable.json') || contains(steps.calc_file_list.outputs.changed_files, 'beta.json')
       run: |
         modified_files=""
         for file in stable.json beta.json; do
           if [ -f "$file" ]; then
+            echo "Processing file: $file"
             # 备份原始文件
-            cp "$file" "$file.bak"
+            cp -v "$file" "$file.bak"
             # 执行替换
             sed -i 's|os-artifacts.home-assistant.io|os-artifacts.smart-assistant.cn|g' "$file"
             # 检查是否修改成功
             if ! diff -q "$file" "$file.bak" > /dev/null; then
-              echo "Modified $file"
+              echo "File $file was modified"
               modified_files="$modified_files $file"
+              echo "Modified content:"
+              cat "$file"
+            else
+              echo "No changes needed for $file"
             fi
-            rm "$file.bak"
+            rm -v "$file.bak"
+          else
+            echo "File $file not found"
           fi
         done
         echo "modified_files=${modified_files}" >> $GITHUB_OUTPUT
 
     - name: Verify file modification
       id: verify_modification
-      if: contains(needs.prepare.outputs.files, 'stable.json') || contains(needs.prepare.outputs.files, 'beta.json')
       run: |
         echo "=== File Content Verification ==="
         for file in ${{ steps.modify_files.outputs.modified_files }}; do
-          echo "Checking $file:"
-          grep "os-artifacts.smart-assistant.cn" "$file" || (echo "Modification failed in $file" && exit 1)
-          echo "Modification confirmed in $file"
+          echo "Verifying $file..."
+          if grep -q "os-artifacts.smart-assistant.cn" "$file"; then
+            echo "Verification PASSED for $file"
+          else
+            echo "Verification FAILED for $file"
+            exit 1
+          fi
         done
         echo "modified_files=${{ steps.modify_files.outputs.modified_files }}" >> $GITHUB_OUTPUT
 
