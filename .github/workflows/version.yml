@@ -44,7 +44,7 @@ jobs:
     - name: Checkout the repository
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # 确保获取完整历史记录
+        fetch-depth: 0
 
     - name: Get changed files for push
       if: github.event_name == 'push'
@@ -71,11 +71,6 @@ jobs:
             core.setOutput("changed_files", input_files.join(' '))
             return input_files.filter(value => signed_files.includes(value))
           }
-
-    - name: Debug print files
-      run: |
-        echo "Changed files: ${{ steps.calc_file_list.outputs.changed_files }}"
-        ls -la
 
     - name: Modify JSON files
       id: modify_files
@@ -119,6 +114,15 @@ jobs:
         done
         echo "modified_files=${{ steps.modify_files.outputs.modified_files }}" >> $GITHUB_OUTPUT
 
+    - name: Save modified files
+      uses: actions/cache/save@v3
+      if: always() && steps.modify_files.outputs.modified_files != ''
+      with:
+        path: |
+          stable.json
+          beta.json
+        key: ${{ github.run_id }}-modified-files
+
   signing:
     name: Sign ${{ matrix.path }}
     needs: ["prepare"]
@@ -133,6 +137,27 @@ jobs:
     steps:
       - name: Checkout the repository
         uses: actions/checkout@v4
+
+      - name: Restore modified files
+        uses: actions/cache/restore@v3
+        id: restore-modified-files
+        with:
+          path: |
+            stable.json
+            beta.json
+          key: ${{ github.run_id }}-modified-files
+
+      - name: Verify restored files
+        if: steps.restore-modified-files.outputs.cache-hit == 'true'
+        run: |
+          echo "=== Restored File Contents ==="
+          for file in stable.json beta.json; do
+            if [ -f "$file" ]; then
+              echo "File: $file"
+              cat "$file"
+              echo "------------------------"
+            fi
+          done
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3.4.0
@@ -173,15 +198,40 @@ jobs:
     - name: Checkout the repository
       uses: actions/checkout@v4
 
+    - name: Restore modified files
+      uses: actions/cache/restore@v3
+      id: restore-modified-files
+      with:
+        path: |
+          stable.json
+          beta.json
+        key: ${{ github.run_id }}-modified-files
+
     - name: Show modified file contents
-      if: needs.prepare.outputs.modified_files != ''
       run: |
-        echo "=== Final File Contents ==="
-        for file in ${{ needs.prepare.outputs.modified_files }}; do
-          echo "File: $file"
-          cat "$file"
-          echo "------------------------"
+        echo "=== Final File Contents Before Upload ==="
+        for file in stable.json beta.json; do
+          if [ -f "$file" ]; then
+            echo "File: $file"
+            cat "$file"
+            echo "Contains modified domain:"
+            grep "os-artifacts.smart-assistant.cn" "$file" || echo "NOT MODIFIED!"
+            echo "------------------------"
+          fi
         done
+
+    - name: Verify files before upload
+      run: |
+        fail=0
+        for file in ${{ needs.prepare.outputs.modified_files }}; do
+          if ! grep -q "os-artifacts.smart-assistant.cn" "$file"; then
+            echo "::error::File $file was not properly modified!"
+            fail=1
+          fi
+        done
+        if [ "$fail" -eq 1 ]; then
+          exit 1
+        fi
 
     - name: Setup Python version ${{ env.PYTHON_VERSION }}
       uses: actions/setup-python@v5
