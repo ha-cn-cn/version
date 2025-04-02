@@ -70,13 +70,21 @@ jobs:
             return input_files.filter(value => signed_files.includes(value))
           }
 
+    - name: Debug changed files
+      run: |
+        echo "Changed files: ${{ steps.calc_file_list.outputs.changed_files }}"
+
     - name: Modify JSON content
       if: contains(steps.calc_file_list.outputs.changed_files, 'stable.json') || contains(steps.calc_file_list.outputs.changed_files, 'beta.json')
       run: |
         for file in stable.json beta.json; do
           if [[ -f "$file" ]]; then
-            sed -i 's/os-artifacts.home-assistant.io/os-artifacts.smart-assistant.cn/g' "$file"
-            echo "Modified $file with new domain"
+            echo "Modifying $file..."
+            sed -i 's|os-artifacts.home-assistant.io|os-artifacts.smart-assistant.cn|g' "$file"
+            echo "Modification confirmed:"
+            grep "os-artifacts" "$file"
+          else
+            echo "Skipping $file (not found)"
           fi
         done
 
