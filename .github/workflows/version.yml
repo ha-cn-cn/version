@@ -72,30 +72,48 @@ jobs:
             return input_files.filter(value => signed_files.includes(value))
           }
 
-    - name: Modify JSON files
+    - name: Modify JSON files conditionally
       id: modify_files
       run: |
         modified_files=""
         for file in stable.json beta.json; do
           if [ -f "$file" ]; then
-            echo "Processing file: $file"
-            # 备份原始文件
-            cp -v "$file" "$file.bak"
-            # 执行替换
-            sed -i \
-              -e 's|os-artifacts.home-assistant.io|os-artifacts.smart-assistant.cn|g' \
-              -e 's|ghcr.io/home-assistant|ha-cn.cn/home-assistant-cn|g' \
-              "$file"
-            # 检查是否修改成功
-            if ! diff -q "$file" "$file.bak" > /dev/null; then
-              echo "File $file was modified"
-              modified_files="$modified_files $file"
-              echo "Modified content:"
-              cat "$file"
-            else
-              echo "No changes needed for $file"
+            echo "Checking file: $file"
+            
+            # 检查是否需要修改
+            need_modify=false
+            if grep -q "os-artifacts.home-assistant.io" "$file"; then
+              echo "Found 'os-artifacts.home-assistant.io' in $file"
+              need_modify=true
             fi
-            rm -v "$file.bak"
+            if grep -q "ghcr.io/home-assistant" "$file"; then
+              echo "Found 'ghcr.io/home-assistant' in $file"
+              need_modify=true
+            fi
+            
+            if [ "$need_modify" = true ]; then
+              echo "Processing modifications for $file"
+              # 备份原始文件
+              cp -v "$file" "$file.bak"
+              # 执行条件替换
+              sed -i \
+                -e 's|os-artifacts.home-assistant.io|os-artifacts.smart-assistant.cn|g' \
+                -e 's|ghcr.io/home-assistant|ha-cn.cn/home-assistant-cn|g' \
+                "$file"
+              
+              # 检查是否修改成功
+              if ! diff -q "$file" "$file.bak" > /dev/null; then
+                echo "File $file was modified"
+                modified_files="$modified_files $file"
+                echo "Modified content:"
+                cat "$file"
+              else
+                echo "No actual changes made to $file"
+              fi
+              rm -v "$file.bak"
+            else
+              echo "No target strings found in $file, skipping modification"
+            fi
           else
             echo "File $file not found"
           fi
@@ -104,27 +122,36 @@ jobs:
 
     - name: Verify file modification
       id: verify_modification
+      if: steps.modify_files.outputs.modified_files != ''
       run: |
         echo "=== File Content Verification ==="
         for file in ${{ steps.modify_files.outputs.modified_files }}; do
           echo "Verifying $file..."
-          # 验证第一个替换
+          # 验证替换是否完成
+          if grep -q "os-artifacts.home-assistant.io" "$file"; then
+            echo "::error::Original string still exists in $file"
+            exit 1
+          fi
+          if grep -q "ghcr.io/home-assistant" "$file"; then
+            echo "::error::Original string still exists in $file"
+            exit 1
+          fi
+          # 验证新字符串是否存在
           if ! grep -q "os-artifacts.smart-assistant.cn" "$file"; then
-            echo "::error::First replacement failed in $file"
+            echo "::error::Replacement string missing in $file"
             exit 1
           fi
-          # 验证第二个替换
           if ! grep -q "ha-cn.cn/home-assistant-cn" "$file"; then
-            echo "::error::Second replacement failed in $file"
+            echo "::error::Replacement string missing in $file"
             exit 1
           fi
-          echo "All replacements verified in $file"
+          echo "All verifications passed for $file"
         done
         echo "modified_files=${{ steps.modify_files.outputs.modified_files }}" >> $GITHUB_OUTPUT
 
     - name: Save modified files
+      if: steps.modify_files.outputs.modified_files != ''
       uses: actions/cache/save@v3
-      if: always() && steps.modify_files.outputs.modified_files != ''
       with:
         path: |
           stable.json
