@@ -72,7 +72,7 @@ jobs:
 
     - name: Modify JSON files if needed
       id: modify_files
-      if: contains(needs.prepare.outputs.files, 'stable.json') || contains(needs.prepare.outputs.files, 'beta.json')
+      if: contains(steps.calc_file_list.outputs.changed_files, 'stable.json') || contains(steps.calc_file_list.outputs.changed_files, 'beta.json')
       run: |
         modified_files=""
         for file in stable.json beta.json; do
