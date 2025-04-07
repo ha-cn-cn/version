@@ -126,7 +126,6 @@ jobs:
           echo "No version changes detected in monitored components."
         fi
 
-  # Home Assistant 同步任务
   sync_homeassistant:
     needs: monitor
     if: ${{ needs.monitor.outputs.homeassistant_version_changed == 'true' }}
@@ -204,27 +203,29 @@ jobs:
           docker rmi "${SRC_IMAGE}:${version}" || true
           [ "${{ matrix.arch }}" = "home-assistant" ] && docker rmi "${DEST_IMAGE}:${ym_tag}" || true
 
-  # HassIO 组件同步任务
-  sync_hassio:
+  sync_hassio_components:
     needs: monitor
-    if: ${{ needs.monitor.outputs.cli_version_changed == 'true' || needs.monitor.outputs.dns_version_changed == 'true' || needs.monitor.outputs.audio_version_changed == 'true' || needs.monitor.outputs.multicast_version_changed == 'true' || needs.monitor.outputs.observer_version_changed == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        component:
-          - ${{ needs.monitor.outputs.cli_version_changed == 'true' && 'cli' || '' }}
-          - ${{ needs.monitor.outputs.dns_version_changed == 'true' && 'dns' || '' }}
-          - ${{ needs.monitor.outputs.audio_version_changed == 'true' && 'audio' || '' }}
-          - ${{ needs.monitor.outputs.multicast_version_changed == 'true' && 'multicast' || '' }}
-          - ${{ needs.monitor.outputs.observer_version_changed == 'true' && 'observer' || '' }}
-        arch:
-          - 'amd64'
-          - 'i386'
-          - 'armhf'
-          - 'armv7'
-          - 'aarch64'
-      exclude:
-        - component: ''
+        component: ['cli', 'dns', 'audio', 'multicast', 'observer']
+        arch: ['amd64', 'i386', 'armhf', 'armv7', 'aarch64']
+        include:
+          - component: 'cli'
+            version_changed: ${{ needs.monitor.outputs.cli_version_changed == 'true' }}
+            new_version: ${{ needs.monitor.outputs.new_cli_version }}
+          - component: 'dns'
+            version_changed: ${{ needs.monitor.outputs.dns_version_changed == 'true' }}
+            new_version: ${{ needs.monitor.outputs.new_dns_version }}
+          - component: 'audio'
+            version_changed: ${{ needs.monitor.outputs.audio_version_changed == 'true' }}
+            new_version: ${{ needs.monitor.outputs.new_audio_version }}
+          - component: 'multicast'
+            version_changed: ${{ needs.monitor.outputs.multicast_version_changed == 'true' }}
+            new_version: ${{ needs.monitor.outputs.new_multicast_version }}
+          - component: 'observer'
+            version_changed: ${{ needs.monitor.outputs.observer_version_changed == 'true' }}
+            new_version: ${{ needs.monitor.outputs.new_observer_version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -236,9 +237,10 @@ jobs:
           password: ${{ secrets.ALIYUN_PASSWORD }}
 
       - name: Process HassIO component
+        if: ${{ matrix.version_changed == 'true' }}
         run: |
           component="${{ matrix.component }}"
-          version="${{ needs.monitor.outputs.new_${matrix.component}_version }}"
+          version="${{ matrix.new_version }}"
           SRC_IMAGE="ghcr.io/home-assistant/${{ matrix.arch }}-hassio-${component}"
           DEST_IMAGE="${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${{ matrix.arch }}-hassio-${component}"
 
