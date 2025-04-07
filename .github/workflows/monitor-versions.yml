@@ -8,7 +8,6 @@ on:
 env:
   ALIYUN_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
   ALIYUN_NAMESPACE: ${{ secrets.ALIYUN_NAMESPACE }}
-  SUPPORTED_COMPONENTS: 'cli|dns|audio|multicast|observer'
 
 jobs:
   monitor:
@@ -30,21 +29,18 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        fetch-depth: 2  # Need previous commit for comparison
+        fetch-depth: 2
 
     - name: Compare versions
       id: compare
       run: |
-        # Get current and previous file content
         CURRENT=$(cat stable.json)
         PREVIOUS=$(git show HEAD^:stable.json 2>/dev/null || echo "{}")
 
-        # Function to extract version from JSON
         extract_version() {
           echo "$1" | jq -r "$2" || echo ""
         }
 
-        # Current versions
         CURRENT_HA=$(extract_version "$CURRENT" '.homeassistant.default')
         CURRENT_CLI=$(extract_version "$CURRENT" '.cli')
         CURRENT_DNS=$(extract_version "$CURRENT" '.dns')
@@ -52,7 +48,6 @@ jobs:
         CURRENT_MULTICAST=$(extract_version "$CURRENT" '.multicast')
         CURRENT_OBSERVER=$(extract_version "$CURRENT" '.observer')
 
-        # Previous versions
         PREVIOUS_HA=$(extract_version "$PREVIOUS" '.homeassistant.default')
         PREVIOUS_CLI=$(extract_version "$PREVIOUS" '.cli')
         PREVIOUS_DNS=$(extract_version "$PREVIOUS" '.dns')
@@ -60,7 +55,6 @@ jobs:
         PREVIOUS_MULTICAST=$(extract_version "$PREVIOUS" '.multicast')
         PREVIOUS_OBSERVER=$(extract_version "$PREVIOUS" '.observer')
 
-        # Check for changes and set outputs
         if [ "$CURRENT_HA" != "$PREVIOUS_HA" ] && [ -n "$CURRENT_HA" ]; then
           echo "homeassistant_version_changed=true" >> $GITHUB_OUTPUT
           echo "new_homeassistant_version=$CURRENT_HA" >> $GITHUB_OUTPUT
@@ -89,41 +83,6 @@ jobs:
         if [ "$CURRENT_OBSERVER" != "$PREVIOUS_OBSERVER" ] && [ -n "$CURRENT_OBSERVER" ]; then
           echo "observer_version_changed=true" >> $GITHUB_OUTPUT
           echo "new_observer_version=$CURRENT_OBSERVER" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Output version changes
-      run: |
-        if [ "${{ steps.compare.outputs.homeassistant_version_changed }}" = "true" ]; then
-          echo "homeassistant: ${{ steps.compare.outputs.new_homeassistant_version }}"
-        fi
-
-        if [ "${{ steps.compare.outputs.cli_version_changed }}" = "true" ]; then
-          echo "cli: ${{ steps.compare.outputs.new_cli_version }}"
-        fi
-
-        if [ "${{ steps.compare.outputs.dns_version_changed }}" = "true" ]; then
-          echo "dns: ${{ steps.compare.outputs.new_dns_version }}"
-        fi
-
-        if [ "${{ steps.compare.outputs.audio_version_changed }}" = "true" ]; then
-          echo "audio: ${{ steps.compare.outputs.new_audio_version }}"
-        fi
-
-        if [ "${{ steps.compare.outputs.multicast_version_changed }}" = "true" ]; then
-          echo "multicast: ${{ steps.compare.outputs.new_multicast_version }}"
-        fi
-
-        if [ "${{ steps.compare.outputs.observer_version_changed }}" = "true" ]; then
-          echo "observer: ${{ steps.compare.outputs.new_observer_version }}"
-        fi
-
-        if [ "${{ steps.compare.outputs.homeassistant_version_changed }}" != "true" ] && \
-           [ "${{ steps.compare.outputs.cli_version_changed }}" != "true" ] && \
-           [ "${{ steps.compare.outputs.dns_version_changed }}" != "true" ] && \
-           [ "${{ steps.compare.outputs.audio_version_changed }}" != "true" ] && \
-           [ "${{ steps.compare.outputs.multicast_version_changed }}" != "true" ] && \
-           [ "${{ steps.compare.outputs.observer_version_changed }}" != "true" ]; then
-          echo "No version changes detected in monitored components."
         fi
 
   sync_homeassistant:
@@ -177,31 +136,32 @@ jobs:
           SRC_IMAGE="ghcr.io/home-assistant/${{ matrix.arch }}"
           DEST_IMAGE="${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${{ matrix.arch }}"
 
-          docker pull "${SRC_IMAGE}:${version}" || {
-            echo "::warning::跳过 ${{ matrix.arch }}:${version}"
+          echo "Processing ${{ matrix.arch }} version $version"
+          
+          if ! docker pull "${SRC_IMAGE}:${version}"; then
+            echo "::warning::Skipping ${{ matrix.arch }}:${version} - image not found"
             exit 0
-          }
+          fi
 
-          # 打标签
           docker tag "${SRC_IMAGE}:${version}" "${DEST_IMAGE}:${version}"
           docker tag "${SRC_IMAGE}:${version}" "${DEST_IMAGE}:latest"
 
-          # 主镜像特殊标签
           if [ "${{ matrix.arch }}" = "home-assistant" ]; then
             ym_tag=$(echo "${version}" | awk -F. '{print $1"."$2}')
             docker tag "${SRC_IMAGE}:${version}" "${DEST_IMAGE}:stable"
             docker tag "${SRC_IMAGE}:${version}" "${DEST_IMAGE}:${ym_tag}"
           fi
 
-          # 推送
           docker push "${DEST_IMAGE}:${version}"
           docker push "${DEST_IMAGE}:latest"
-          [ "${{ matrix.arch }}" = "home-assistant" ] && docker push "${DEST_IMAGE}:stable"
-          [ "${{ matrix.arch }}" = "home-assistant" ] && docker push "${DEST_IMAGE}:${ym_tag}"
+          
+          if [ "${{ matrix.arch }}" = "home-assistant" ]; then
+            docker push "${DEST_IMAGE}:stable"
+            docker push "${DEST_IMAGE}:${ym_tag}"
+          fi
 
-          # 清理
           docker rmi "${SRC_IMAGE}:${version}" || true
-          [ "${{ matrix.arch }}" = "home-assistant" ] && docker rmi "${DEST_IMAGE}:${ym_tag}" || true
+          echo "::notice::Successfully synced ${{ matrix.arch }}:$version"
 
   sync_hassio_components:
     needs: monitor
@@ -250,15 +210,25 @@ jobs:
           SRC_IMAGE="ghcr.io/home-assistant/${{ matrix.arch }}-hassio-${component}"
           DEST_IMAGE="${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${{ matrix.arch }}-hassio-${component}"
 
-          docker pull "${SRC_IMAGE}:${version}" || {
-            echo "::warning::跳过 ${{ matrix.arch }}-hassio-${component}:${version}"
+          echo "Processing $component version $version for ${{ matrix.arch }}"
+          
+          if ! docker pull "${SRC_IMAGE}:${version}"; then
+            echo "::warning::Skipping ${{ matrix.arch }}-hassio-${component}:${version} - image not found"
             exit 0
-          }
+          fi
 
           docker tag "${SRC_IMAGE}:${version}" "${DEST_IMAGE}:${version}"
           docker tag "${SRC_IMAGE}:${version}" "${DEST_IMAGE}:latest"
 
-          docker push "${DEST_IMAGE}:${version}"
-          docker push "${DEST_IMAGE}:latest"
+          if ! docker push "${DEST_IMAGE}:${version}"; then
+            echo "::error::Failed to push ${DEST_IMAGE}:${version}"
+            exit 1
+          fi
+
+          if ! docker push "${DEST_IMAGE}:latest"; then
+            echo "::error::Failed to push ${DEST_IMAGE}:latest"
+            exit 1
+          fi
 
           docker rmi "${SRC_IMAGE}:${version}" || true
+          echo "::notice::Successfully synced $component:$version for ${{ matrix.arch }}"
