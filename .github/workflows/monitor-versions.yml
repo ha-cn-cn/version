@@ -1,0 +1,109 @@
+name: Monitor Home Assistant Versions
+
+on:
+  push:
+    paths:
+      - 'stable.json'
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2  # Need previous commit for comparison
+
+    - name: Compare versions
+      id: compare
+      run: |
+        # Get current and previous file content
+        CURRENT=$(cat stable.json)
+        PREVIOUS=$(git show HEAD^:stable.json 2>/dev/null || echo "{}")
+
+        # Function to extract version from JSON
+        extract_version() {
+          echo "$1" | jq -r "$2" || echo ""
+        }
+
+        # Current versions
+        CURRENT_HA=$(extract_version "$CURRENT" '.homeassistant.default')
+        CURRENT_CLI=$(extract_version "$CURRENT" '.cli')
+        CURRENT_DNS=$(extract_version "$CURRENT" '.dns')
+        CURRENT_AUDIO=$(extract_version "$CURRENT" '.audio')
+        CURRENT_MULTICAST=$(extract_version "$CURRENT" '.multicast')
+        CURRENT_OBSERVER=$(extract_version "$CURRENT" '.observer')
+
+        # Previous versions
+        PREVIOUS_HA=$(extract_version "$PREVIOUS" '.homeassistant.default')
+        PREVIOUS_CLI=$(extract_version "$PREVIOUS" '.cli')
+        PREVIOUS_DNS=$(extract_version "$PREVIOUS" '.dns')
+        PREVIOUS_AUDIO=$(extract_version "$PREVIOUS" '.audio')
+        PREVIOUS_MULTICAST=$(extract_version "$PREVIOUS" '.multicast')
+        PREVIOUS_OBSERVER=$(extract_version "$PREVIOUS" '.observer')
+
+        # Check for changes and set outputs
+        if [ "$CURRENT_HA" != "$PREVIOUS_HA" ] && [ -n "$CURRENT_HA" ]; then
+          echo "homeassistant_version_changed=true" >> $GITHUB_OUTPUT
+          echo "new_homeassistant_version=$CURRENT_HA" >> $GITHUB_OUTPUT
+        fi
+
+        if [ "$CURRENT_CLI" != "$PREVIOUS_CLI" ] && [ -n "$CURRENT_CLI" ]; then
+          echo "cli_version_changed=true" >> $GITHUB_OUTPUT
+          echo "new_cli_version=$CURRENT_CLI" >> $GITHUB_OUTPUT
+        fi
+
+        if [ "$CURRENT_DNS" != "$PREVIOUS_DNS" ] && [ -n "$CURRENT_DNS" ]; then
+          echo "dns_version_changed=true" >> $GITHUB_OUTPUT
+          echo "new_dns_version=$CURRENT_DNS" >> $GITHUB_OUTPUT
+        fi
+
+        if [ "$CURRENT_AUDIO" != "$PREVIOUS_AUDIO" ] && [ -n "$CURRENT_AUDIO" ]; then
+          echo "audio_version_changed=true" >> $GITHUB_OUTPUT
+          echo "new_audio_version=$CURRENT_AUDIO" >> $GITHUB_OUTPUT
+        fi
+
+        if [ "$CURRENT_MULTICAST" != "$PREVIOUS_MULTICAST" ] && [ -n "$CURRENT_MULTICAST" ]; then
+          echo "multicast_version_changed=true" >> $GITHUB_OUTPUT
+          echo "new_multicast_version=$CURRENT_MULTICAST" >> $GITHUB_OUTPUT
+        fi
+
+        if [ "$CURRENT_OBSERVER" != "$PREVIOUS_OBSERVER" ] && [ -n "$CURRENT_OBSERVER" ]; then
+          echo "observer_version_changed=true" >> $GITHUB_OUTPUT
+          echo "new_observer_version=$CURRENT_OBSERVER" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Output version changes
+      run: |
+        if [ "${{ steps.compare.outputs.homeassistant_version_changed }}" = "true" ]; then
+          echo "homeassistant: ${{ steps.compare.outputs.new_homeassistant_version }}"
+        fi
+
+        if [ "${{ steps.compare.outputs.cli_version_changed }}" = "true" ]; then
+          echo "cli: ${{ steps.compare.outputs.new_cli_version }}"
+        fi
+
+        if [ "${{ steps.compare.outputs.dns_version_changed }}" = "true" ]; then
+          echo "dns: ${{ steps.compare.outputs.new_dns_version }}"
+        fi
+
+        if [ "${{ steps.compare.outputs.audio_version_changed }}" = "true" ]; then
+          echo "audio: ${{ steps.compare.outputs.new_audio_version }}"
+        fi
+
+        if [ "${{ steps.compare.outputs.multicast_version_changed }}" = "true" ]; then
+          echo "multicast: ${{ steps.compare.outputs.new_multicast_version }}"
+        fi
+
+        if [ "${{ steps.compare.outputs.observer_version_changed }}" = "true" ]; then
+          echo "observer: ${{ steps.compare.outputs.new_observer_version }}"
+        fi
+
+        if [ "${{ steps.compare.outputs.homeassistant_version_changed }}" != "true" ] && \
+           [ "${{ steps.compare.outputs.cli_version_changed }}" != "true" ] && \
+           [ "${{ steps.compare.outputs.dns_version_changed }}" != "true" ] && \
+           [ "${{ steps.compare.outputs.audio_version_changed }}" != "true" ] && \
+           [ "${{ steps.compare.outputs.multicast_version_changed }}" != "true" ] && \
+           [ "${{ steps.compare.outputs.observer_version_changed }}" != "true" ]; then
+          echo "No version changes detected in monitored components."
+        fi
