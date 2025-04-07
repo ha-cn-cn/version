@@ -201,26 +201,6 @@ jobs:
     needs: version_monitor
     if: ${{ needs.version_monitor.outputs.has_hassio == 'true' }}
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        component: ['cli', 'dns', 'audio', 'multicast', 'observer']
-        arch:
-          - 'amd64'
-          - 'i386'
-          - 'armhf'
-          - 'armv7'
-          - 'aarch64'
-      include:
-        - component: cli
-          version: ${{ needs.version_monitor.outputs.cli_version }}
-        - component: dns
-          version: ${{ needs.version_monitor.outputs.dns_version }}
-        - component: audio
-          version: ${{ needs.version_monitor.outputs.audio_version }}
-        - component: multicast
-          version: ${{ needs.version_monitor.outputs.multicast_version }}
-        - component: observer
-          version: ${{ needs.version_monitor.outputs.observer_version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -231,21 +211,51 @@ jobs:
           username: ${{ secrets.ALIYUN_USERNAME }}
           password: ${{ secrets.ALIYUN_PASSWORD }}
 
-      - name: Process HassIO component
-        if: ${{ matrix.version != '' }}
+      - name: Sync CLI
+        if: ${{ needs.version_monitor.outputs.cli_version != '' }}
         run: |
-          SRC_IMAGE="ghcr.io/home-assistant/${{ matrix.arch }}-hassio-${{ matrix.component }}"
-          DEST_IMAGE="${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${{ matrix.arch }}-hassio-${{ matrix.component }}"
+          sync_component() {
+            local component=$1
+            local version=$2
+            local archs=("amd64" "i386" "armhf" "armv7" "aarch64")
+            
+            for arch in "${archs[@]}"; do
+              SRC_IMAGE="ghcr.io/home-assistant/${arch}-hassio-${component}"
+              DEST_IMAGE="${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${arch}-hassio-${component}"
 
-          docker pull "${SRC_IMAGE}:${{ matrix.version }}" || {
-            echo "::warning::跳过 ${{ matrix.arch }}-hassio-${{ matrix.component }}:${{ matrix.version }}"
-            exit 0
+              docker pull "${SRC_IMAGE}:${version}" || {
+                echo "::warning::跳过 ${arch}-hassio-${component}:${version}"
+                continue
+              }
+
+              docker tag "${SRC_IMAGE}:${version}" "${DEST_IMAGE}:${version}"
+              docker tag "${SRC_IMAGE}:${version}" "${DEST_IMAGE}:latest"
+
+              docker push "${DEST_IMAGE}:${version}"
+              docker push "${DEST_IMAGE}:latest"
+
+              docker rmi "${SRC_IMAGE}:${version}" || true
+            done
           }
 
-          docker tag "${SRC_IMAGE}:${{ matrix.version }}" "${DEST_IMAGE}:${{ matrix.version }}"
-          docker tag "${SRC_IMAGE}:${{ matrix.version }}" "${DEST_IMAGE}:latest"
+          sync_component "cli" "${{ needs.version_monitor.outputs.cli_version }}"
 
-          docker push "${DEST_IMAGE}:${{ matrix.version }}"
-          docker push "${DEST_IMAGE}:latest"
+      - name: Sync DNS
+        if: ${{ needs.version_monitor.outputs.dns_version != '' }}
+        run: |
+          sync_component "dns" "${{ needs.version_monitor.outputs.dns_version }}"
 
-          docker rmi "${SRC_IMAGE}:${{ matrix.version }}" || true
+      - name: Sync Audio
+        if: ${{ needs.version_monitor.outputs.audio_version != '' }}
+        run: |
+          sync_component "audio" "${{ needs.version_monitor.outputs.audio_version }}"
+
+      - name: Sync Multicast
+        if: ${{ needs.version_monitor.outputs.multicast_version != '' }}
+        run: |
+          sync_component "multicast" "${{ needs.version_monitor.outputs.multicast_version }}"
+
+      - name: Sync Observer
+        if: ${{ needs.version_monitor.outputs.observer_version != '' }}
+        run: |
+          sync_component "observer" "${{ needs.version_monitor.outputs.observer_version }}"
