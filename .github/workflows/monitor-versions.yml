@@ -1,21 +1,35 @@
-name: Monitor Home Assistant Versions
+name: Sync Home Assistant and HassIO Components
 
 on:
   push:
     paths:
       - 'stable.json'
 
+env:
+  ALIYUN_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
+  ALIYUN_NAMESPACE: ${{ secrets.ALIYUN_NAMESPACE }}
+  SUPPORTED_COMPONENTS: 'cli|dns|audio|multicast|observer'
+
 jobs:
-  monitor:
+  version_monitor:
     runs-on: ubuntu-latest
+    outputs:
+      ha_version: ${{ steps.extract_versions.outputs.ha_version }}
+      cli_version: ${{ steps.extract_versions.outputs.cli_version }}
+      dns_version: ${{ steps.extract_versions.outputs.dns_version }}
+      audio_version: ${{ steps.extract_versions.outputs.audio_version }}
+      multicast_version: ${{ steps.extract_versions.outputs.multicast_version }}
+      observer_version: ${{ steps.extract_versions.outputs.observer_version }}
+      has_ha: ${{ steps.extract_versions.outputs.has_ha }}
+      has_hassio: ${{ steps.extract_versions.outputs.has_hassio }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        fetch-depth: 2  # Need previous commit for comparison
+        fetch-depth: 2
 
-    - name: Compare versions
-      id: compare
+    - name: Extract versions
+      id: extract_versions
       run: |
         # Get current and previous file content
         CURRENT=$(cat stable.json)
@@ -42,68 +56,196 @@ jobs:
         PREVIOUS_MULTICAST=$(extract_version "$PREVIOUS" '.multicast')
         PREVIOUS_OBSERVER=$(extract_version "$PREVIOUS" '.observer')
 
-        # Check for changes and set outputs
+        # Set outputs for changed versions
         if [ "$CURRENT_HA" != "$PREVIOUS_HA" ] && [ -n "$CURRENT_HA" ]; then
-          echo "homeassistant_version_changed=true" >> $GITHUB_OUTPUT
-          echo "new_homeassistant_version=$CURRENT_HA" >> $GITHUB_OUTPUT
+          echo "ha_version=$CURRENT_HA" >> $GITHUB_OUTPUT
+          echo "has_ha=true" >> $GITHUB_OUTPUT
+        else
+          echo "has_ha=false" >> $GITHUB_OUTPUT
         fi
 
+        HAS_HASSIO=false
         if [ "$CURRENT_CLI" != "$PREVIOUS_CLI" ] && [ -n "$CURRENT_CLI" ]; then
-          echo "cli_version_changed=true" >> $GITHUB_OUTPUT
-          echo "new_cli_version=$CURRENT_CLI" >> $GITHUB_OUTPUT
+          echo "cli_version=$CURRENT_CLI" >> $GITHUB_OUTPUT
+          HAS_HASSIO=true
         fi
 
         if [ "$CURRENT_DNS" != "$PREVIOUS_DNS" ] && [ -n "$CURRENT_DNS" ]; then
-          echo "dns_version_changed=true" >> $GITHUB_OUTPUT
-          echo "new_dns_version=$CURRENT_DNS" >> $GITHUB_OUTPUT
+          echo "dns_version=$CURRENT_DNS" >> $GITHUB_OUTPUT
+          HAS_HASSIO=true
         fi
 
         if [ "$CURRENT_AUDIO" != "$PREVIOUS_AUDIO" ] && [ -n "$CURRENT_AUDIO" ]; then
-          echo "audio_version_changed=true" >> $GITHUB_OUTPUT
-          echo "new_audio_version=$CURRENT_AUDIO" >> $GITHUB_OUTPUT
+          echo "audio_version=$CURRENT_AUDIO" >> $GITHUB_OUTPUT
+          HAS_HASSIO=true
         fi
 
         if [ "$CURRENT_MULTICAST" != "$PREVIOUS_MULTICAST" ] && [ -n "$CURRENT_MULTICAST" ]; then
-          echo "multicast_version_changed=true" >> $GITHUB_OUTPUT
-          echo "new_multicast_version=$CURRENT_MULTICAST" >> $GITHUB_OUTPUT
+          echo "multicast_version=$CURRENT_MULTICAST" >> $GITHUB_OUTPUT
+          HAS_HASSIO=true
         fi
 
         if [ "$CURRENT_OBSERVER" != "$PREVIOUS_OBSERVER" ] && [ -n "$CURRENT_OBSERVER" ]; then
-          echo "observer_version_changed=true" >> $GITHUB_OUTPUT
-          echo "new_observer_version=$CURRENT_OBSERVER" >> $GITHUB_OUTPUT
+          echo "observer_version=$CURRENT_OBSERVER" >> $GITHUB_OUTPUT
+          HAS_HASSIO=true
         fi
+
+        echo "has_hassio=$HAS_HASSIO" >> $GITHUB_OUTPUT
 
     - name: Output version changes
       run: |
-        if [ "${{ steps.compare.outputs.homeassistant_version_changed }}" = "true" ]; then
-          echo "homeassistant: ${{ steps.compare.outputs.new_homeassistant_version }}"
+        if [ "${{ steps.extract_versions.outputs.has_ha }}" = "true" ]; then
+          echo "homeassistant: ${{ steps.extract_versions.outputs.ha_version }}"
         fi
 
-        if [ "${{ steps.compare.outputs.cli_version_changed }}" = "true" ]; then
-          echo "cli: ${{ steps.compare.outputs.new_cli_version }}"
+        if [ -n "${{ steps.extract_versions.outputs.cli_version }}" ]; then
+          echo "cli: ${{ steps.extract_versions.outputs.cli_version }}"
         fi
 
-        if [ "${{ steps.compare.outputs.dns_version_changed }}" = "true" ]; then
-          echo "dns: ${{ steps.compare.outputs.new_dns_version }}"
+        if [ -n "${{ steps.extract_versions.outputs.dns_version }}" ]; then
+          echo "dns: ${{ steps.extract_versions.outputs.dns_version }}"
         fi
 
-        if [ "${{ steps.compare.outputs.audio_version_changed }}" = "true" ]; then
-          echo "audio: ${{ steps.compare.outputs.new_audio_version }}"
+        if [ -n "${{ steps.extract_versions.outputs.audio_version }}" ]; then
+          echo "audio: ${{ steps.extract_versions.outputs.audio_version }}"
         fi
 
-        if [ "${{ steps.compare.outputs.multicast_version_changed }}" = "true" ]; then
-          echo "multicast: ${{ steps.compare.outputs.new_multicast_version }}"
+        if [ -n "${{ steps.extract_versions.outputs.multicast_version }}" ]; then
+          echo "multicast: ${{ steps.extract_versions.outputs.multicast_version }}"
         fi
 
-        if [ "${{ steps.compare.outputs.observer_version_changed }}" = "true" ]; then
-          echo "observer: ${{ steps.compare.outputs.new_observer_version }}"
+        if [ -n "${{ steps.extract_versions.outputs.observer_version }}" ]; then
+          echo "observer: ${{ steps.extract_versions.outputs.observer_version }}"
         fi
 
-        if [ "${{ steps.compare.outputs.homeassistant_version_changed }}" != "true" ] && \
-           [ "${{ steps.compare.outputs.cli_version_changed }}" != "true" ] && \
-           [ "${{ steps.compare.outputs.dns_version_changed }}" != "true" ] && \
-           [ "${{ steps.compare.outputs.audio_version_changed }}" != "true" ] && \
-           [ "${{ steps.compare.outputs.multicast_version_changed }}" != "true" ] && \
-           [ "${{ steps.compare.outputs.observer_version_changed }}" != "true" ]; then
-          echo "No version changes detected in monitored components."
-        fi
+  # Home Assistant 同步任务
+  sync_homeassistant:
+    needs: version_monitor
+    if: ${{ needs.version_monitor.outputs.has_ha == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch:
+          - 'home-assistant'
+          - 'amd64-homeassistant'
+          - 'i386-homeassistant'
+          - 'armhf-homeassistant'
+          - 'armv7-homeassistant'
+          - 'aarch64-homeassistant'
+          - 'generic-x86-64-homeassistant'
+          - 'intel-nuc-homeassistant'
+          - 'khadas-vim3-homeassistant'
+          - 'odroid-c2-homeassistant'
+          - 'odroid-c4-homeassistant'
+          - 'odroid-m1-homeassistant'
+          - 'odroid-n2-homeassistant'
+          - 'odroid-xu-homeassistant'
+          - 'qemuarm-homeassistant'
+          - 'qemuarm-64-homeassistant'
+          - 'qemux86-homeassistant'
+          - 'qemux86-64-homeassistant'
+          - 'raspberrypi-homeassistant'
+          - 'raspberrypi2-homeassistant'
+          - 'raspberrypi3-homeassistant'
+          - 'raspberrypi3-64-homeassistant'
+          - 'raspberrypi4-homeassistant'
+          - 'raspberrypi4-64-homeassistant'
+          - 'raspberrypi5-64-homeassistant'
+          - 'tinker-homeassistant'
+          - 'yellow-homeassistant'
+          - 'green-homeassistant'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Aliyun
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_USERNAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD }}
+
+      - name: Process Home Assistant image
+        run: |
+          version="${{ needs.version_monitor.outputs.ha_version }}"
+          SRC_IMAGE="ghcr.io/home-assistant/${{ matrix.arch }}"
+          DEST_IMAGE="${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${{ matrix.arch }}"
+
+          docker pull "${SRC_IMAGE}:${version}" || {
+            echo "::warning::跳过 ${{ matrix.arch }}:${version}"
+            exit 0
+          }
+
+          # 打标签
+          docker tag "${SRC_IMAGE}:${version}" "${DEST_IMAGE}:${version}"
+          docker tag "${SRC_IMAGE}:${version}" "${DEST_IMAGE}:latest"
+
+          # 主镜像特殊标签
+          if [ "${{ matrix.arch }}" = "home-assistant" ]; then
+            ym_tag=$(echo "${version}" | awk -F. '{print $1"."$2}')
+            docker tag "${SRC_IMAGE}:${version}" "${DEST_IMAGE}:stable"
+            docker tag "${SRC_IMAGE}:${version}" "${DEST_IMAGE}:${ym_tag}"
+          fi
+
+          # 推送
+          docker push "${DEST_IMAGE}:${version}"
+          docker push "${DEST_IMAGE}:latest"
+          [ "${{ matrix.arch }}" = "home-assistant" ] && docker push "${DEST_IMAGE}:stable"
+          [ "${{ matrix.arch }}" = "home-assistant" ] && docker push "${DEST_IMAGE}:${ym_tag}"
+
+          # 清理
+          docker rmi "${SRC_IMAGE}:${version}" || true
+          [ "${{ matrix.arch }}" = "home-assistant" ] && docker rmi "${DEST_IMAGE}:${ym_tag}" || true
+
+  # HassIO 组件同步任务
+  sync_hassio:
+    needs: version_monitor
+    if: ${{ needs.version_monitor.outputs.has_hassio == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: ['cli', 'dns', 'audio', 'multicast', 'observer']
+        arch:
+          - 'amd64'
+          - 'i386'
+          - 'armhf'
+          - 'armv7'
+          - 'aarch64'
+      include:
+        - component: cli
+          version: ${{ needs.version_monitor.outputs.cli_version }}
+        - component: dns
+          version: ${{ needs.version_monitor.outputs.dns_version }}
+        - component: audio
+          version: ${{ needs.version_monitor.outputs.audio_version }}
+        - component: multicast
+          version: ${{ needs.version_monitor.outputs.multicast_version }}
+        - component: observer
+          version: ${{ needs.version_monitor.outputs.observer_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Aliyun
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_USERNAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD }}
+
+      - name: Process HassIO component
+        if: ${{ matrix.version != '' }}
+        run: |
+          SRC_IMAGE="ghcr.io/home-assistant/${{ matrix.arch }}-hassio-${{ matrix.component }}"
+          DEST_IMAGE="${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${{ matrix.arch }}-hassio-${{ matrix.component }}"
+
+          docker pull "${SRC_IMAGE}:${{ matrix.version }}" || {
+            echo "::warning::跳过 ${{ matrix.arch }}-hassio-${{ matrix.component }}:${{ matrix.version }}"
+            exit 0
+          }
+
+          docker tag "${SRC_IMAGE}:${{ matrix.version }}" "${DEST_IMAGE}:${{ matrix.version }}"
+          docker tag "${SRC_IMAGE}:${{ matrix.version }}" "${DEST_IMAGE}:latest"
+
+          docker push "${DEST_IMAGE}:${{ matrix.version }}"
+          docker push "${DEST_IMAGE}:latest"
+
+          docker rmi "${SRC_IMAGE}:${{ matrix.version }}" || true
