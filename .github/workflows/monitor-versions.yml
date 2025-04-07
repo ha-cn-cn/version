@@ -205,11 +205,16 @@ jobs:
 
   sync_hassio_components:
     needs: monitor
+    if: |
+      needs.monitor.outputs.cli_version_changed == 'true' ||
+      needs.monitor.outputs.dns_version_changed == 'true' ||
+      needs.monitor.outputs.audio_version_changed == 'true' ||
+      needs.monitor.outputs.multicast_version_changed == 'true' ||
+      needs.monitor.outputs.observer_version_changed == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
         component: ['cli', 'dns', 'audio', 'multicast', 'observer']
-        arch: ['amd64', 'i386', 'armhf', 'armv7', 'aarch64']
         include:
           - component: 'cli'
             version_changed: ${{ needs.monitor.outputs.cli_version_changed == 'true' }}
@@ -226,6 +231,7 @@ jobs:
           - component: 'observer'
             version_changed: ${{ needs.monitor.outputs.observer_version_changed == 'true' }}
             new_version: ${{ needs.monitor.outputs.new_observer_version }}
+        arch: ['amd64', 'i386', 'armhf', 'armv7', 'aarch64']
     steps:
       - uses: actions/checkout@v4
 
