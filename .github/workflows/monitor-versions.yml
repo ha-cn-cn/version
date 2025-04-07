@@ -168,15 +168,12 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        component: ${{ fromJSON(
-          '[' +
-          (needs.monitor.outputs.cli_version_changed == 'true' ? '{"name":"cli","version":"' + needs.monitor.outputs.new_cli_version + '"},' : '') +
-          (needs.monitor.outputs.dns_version_changed == 'true' ? '{"name":"dns","version":"' + needs.monitor.outputs.new_dns_version + '"},' : '') +
-          (needs.monitor.outputs.audio_version_changed == 'true' ? '{"name":"audio","version":"' + needs.monitor.outputs.new_audio_version + '"},' : '') +
-          (needs.monitor.outputs.multicast_version_changed == 'true' ? '{"name":"multicast","version":"' + needs.monitor.outputs.new_multicast_version + '"},' : '') +
-          (needs.monitor.outputs.observer_version_changed == 'true' ? '{"name":"observer","version":"' + needs.monitor.outputs.new_observer_version + '"},' : '') +
-          ']'
-        ).filter(x => x.name)}}
+        component:
+          - ${{ fromJSON(needs.monitor.outputs.cli_version_changed == 'true' && '["cli"]' || '[]') }}
+          - ${{ fromJSON(needs.monitor.outputs.dns_version_changed == 'true' && '["dns"]' || '[]') }}
+          - ${{ fromJSON(needs.monitor.outputs.audio_version_changed == 'true' && '["audio"]' || '[]') }}
+          - ${{ fromJSON(needs.monitor.outputs.multicast_version_changed == 'true' && '["multicast"]' || '[]') }}
+          - ${{ fromJSON(needs.monitor.outputs.observer_version_changed == 'true' && '["observer"]' || '[]') }}
         arch: ['amd64', 'i386', 'armhf', 'armv7', 'aarch64']
     steps:
       - uses: actions/checkout@v4
@@ -188,10 +185,31 @@ jobs:
           username: ${{ secrets.ALIYUN_USERNAME }}
           password: ${{ secrets.ALIYUN_PASSWORD }}
 
+      - name: Get component version
+        id: get_version
+        run: |
+          case "${{ matrix.component }}" in
+            "cli")
+              echo "version=${{ needs.monitor.outputs.new_cli_version }}" >> $GITHUB_OUTPUT
+              ;;
+            "dns")
+              echo "version=${{ needs.monitor.outputs.new_dns_version }}" >> $GITHUB_OUTPUT
+              ;;
+            "audio")
+              echo "version=${{ needs.monitor.outputs.new_audio_version }}" >> $GITHUB_OUTPUT
+              ;;
+            "multicast")
+              echo "version=${{ needs.monitor.outputs.new_multicast_version }}" >> $GITHUB_OUTPUT
+              ;;
+            "observer")
+              echo "version=${{ needs.monitor.outputs.new_observer_version }}" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
       - name: Process HassIO component
         run: |
-          component="${{ matrix.component.name }}"
-          version="${{ matrix.component.version }}"
+          component="${{ matrix.component }}"
+          version="${{ steps.get_version.outputs.version }}"
           SRC_IMAGE="ghcr.io/home-assistant/${{ matrix.arch }}-hassio-${component}"
           DEST_IMAGE="${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/${{ matrix.arch }}-hassio-${component}"
 
