@@ -2,7 +2,7 @@
   "channel": "stable",
   "supervisor": "2024.12.3",
   "homeassistant": {
-    "default": "2025.1.0",
+    "default": "2025.1.1",
     "qemux86": "2025.1.4",
     "qemux86-64": "2025.1.4",
     "qemuarm": "2025.1.4",
@@ -60,10 +60,10 @@
   },
   "ota": "https://os-artifacts.home-assistant.io/{version}/{os_name}_{board}-{version}.raucb",
   "cli": "2025.02.0",
-  "dns": "2024.12.0",
+  "dns": "2025.02.0",
   "audio": "2025.02.0",
   "multicast": "2025.02.0",
-  "observer": "2023.06.0",
+  "observer": "2025.02.0",
   "image": {
     "core": "homeassistant/{machine}-homeassistant",
     "supervisor": "homeassistant/{arch}-hassio-supervisor",
