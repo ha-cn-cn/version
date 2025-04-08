@@ -30,7 +30,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Lint with JQ
-      uses: ha-cn-cn/actions/helpers/jq@master
+      uses: home-assistant-cn/actions/helpers/jq@master
 
   prepare:
     name: Prepare
@@ -39,12 +39,9 @@ jobs:
     outputs:
       files: ${{ steps.calc_file_list.outputs.changed_files }}
       sign_matrix: ${{ steps.calc_file_list.outputs.result }}
-      modified_files: ${{ steps.verify_modification.outputs.modified_files }}
     steps:
     - name: Checkout the repository
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
 
     - name: Get changed files for push
       if: github.event_name == 'push'
@@ -61,6 +58,7 @@ jobs:
           const signed_files = "${{ env.SIGNED_FILES }}".split(' ')
           if ("${{ github.event_name }}" === "push") {
             changed_files = JSON.parse('${{ steps.changed_files_push.outputs.all }}')
+            // Sign all files in case this workflow changes.
             if (changed_files.includes(".github/workflows/version.yml")) {
               changed_files = [...new Set([...changed_files, ...signed_files])]
             }
@@ -71,92 +69,6 @@ jobs:
             core.setOutput("changed_files", input_files.join(' '))
             return input_files.filter(value => signed_files.includes(value))
           }
-
-    - name: Modify JSON files conditionally
-      id: modify_files
-      run: |
-        modified_files=""
-        for file in stable.json beta.json; do
-          if [ -f "$file" ]; then
-            echo "Checking file: $file"
-            
-            # 检查是否需要修改
-            need_modify=false
-            if grep -q "os-artifacts.home-assistant.io" "$file"; then
-              echo "Found 'os-artifacts.home-assistant.io' in $file"
-              need_modify=true
-            fi
-            if grep -q "ghcr.io/home-assistant" "$file"; then
-              echo "Found 'ghcr.io/home-assistant' in $file"
-              need_modify=true
-            fi
-            
-            if [ "$need_modify" = true ]; then
-              echo "Processing modifications for $file"
-              # 备份原始文件
-              cp -v "$file" "$file.bak"
-              # 执行条件替换
-              sed -i \
-                -e 's|os-artifacts.home-assistant.io|os-artifacts.smart-assistant.cn|g' \
-                -e 's|ghcr.io/home-assistant|ha-cn.cn/home-assistant-cn|g' \
-                "$file"
-              
-              # 检查是否修改成功
-              if ! diff -q "$file" "$file.bak" > /dev/null; then
-                echo "File $file was modified"
-                modified_files="$modified_files $file"
-                echo "Modified content:"
-                cat "$file"
-              else
-                echo "No actual changes made to $file"
-              fi
-              rm -v "$file.bak"
-            else
-              echo "No target strings found in $file, skipping modification"
-            fi
-          else
-            echo "File $file not found"
-          fi
-        done
-        echo "modified_files=${modified_files}" >> $GITHUB_OUTPUT
-
-    - name: Verify file modification
-      id: verify_modification
-      if: steps.modify_files.outputs.modified_files != ''
-      run: |
-        echo "=== File Content Verification ==="
-        for file in ${{ steps.modify_files.outputs.modified_files }}; do
-          echo "Verifying $file..."
-          # 验证替换是否完成
-          if grep -q "os-artifacts.home-assistant.io" "$file"; then
-            echo "::error::Original string still exists in $file"
-            exit 1
-          fi
-          if grep -q "ghcr.io/home-assistant" "$file"; then
-            echo "::error::Original string still exists in $file"
-            exit 1
-          fi
-          # 验证新字符串是否存在
-          if ! grep -q "os-artifacts.smart-assistant.cn" "$file"; then
-            echo "::error::Replacement string missing in $file"
-            exit 1
-          fi
-          if ! grep -q "ha-cn.cn/home-assistant-cn" "$file"; then
-            echo "::error::Replacement string missing in $file"
-            exit 1
-          fi
-          echo "All verifications passed for $file"
-        done
-        echo "modified_files=${{ steps.modify_files.outputs.modified_files }}" >> $GITHUB_OUTPUT
-
-    - name: Save modified files
-      if: steps.modify_files.outputs.modified_files != ''
-      uses: actions/cache/save@v3
-      with:
-        path: |
-          stable.json
-          beta.json
-        key: ${{ github.run_id }}-modified-files
 
   signing:
     name: Sign ${{ matrix.path }}
@@ -173,32 +85,34 @@ jobs:
       - name: Checkout the repository
         uses: actions/checkout@v4
 
-      - name: Restore modified files
-        uses: actions/cache/restore@v3
-        id: restore-modified-files
-        with:
-          path: |
-            stable.json
-            beta.json
-          key: ${{ github.run_id }}-modified-files
-
-      - name: Verify restored files
-        if: steps.restore-modified-files.outputs.cache-hit == 'true'
+      - name: Validate and modify JSON files
+        if: ${{ contains(matrix.path, 'stable.json') || contains(matrix.path, 'beta.json') }}
         run: |
-          echo "=== Restored File Contents ==="
-          for file in stable.json beta.json; do
-            if [ -f "$file" ]; then
-              echo "File: $file"
-              grep -E "os-artifacts.smart-assistant.cn|ha-cn.cn/home-assistant-cn" "$file" || echo "No replacements found!"
-              echo "------------------------"
+          # Check if file exists
+          if [ -f "${{ matrix.path }}" ]; then
+            # Check if domain needs to be replaced
+            if grep -q "os-artifacts.home-assistant.io" "${{ matrix.path }}"; then
+              echo "Replacing domain in ${{ matrix.path }}"
+              sed -i 's/os-artifacts.home-assistant.io/os-artifacts.home-assistant.xin/g' "${{ matrix.path }}"
+              # Verify the replacement was successful
+              if ! grep -q "os-artifacts.home-assistant.xin" "${{ matrix.path }}"; then
+                echo "Failed to replace domain in ${{ matrix.path }}"
+                exit 1
+              fi
+              echo "Domain replacement successful in ${{ matrix.path }}"
+            else
+              echo "No domain replacement needed in ${{ matrix.path }}"
             fi
-          done
+          else
+            echo "File ${{ matrix.path }} not found"
+            exit 1
+          fi
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3.4.0
         with:
           registry: ghcr.io
-          username: home-assistant
+          username: home-assistant-cn
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: sigstore/cosign-installer@main
@@ -222,56 +136,44 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
-          aws s3 sync . s3://version.smart-assistant.cn --exclude "*" --include "${{ matrix.path }}.sig"
+          aws s3 sync . s3://version.home-assistant.xin --exclude "*" --include "${{ matrix.path }}.sig"
 
   upload:
     name: Upload
     needs: ["signing", "prepare"]
+    # Make sure to run this job even if signing has been skipped.
     if: ${{ !failure() && !cancelled() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     steps:
     - name: Checkout the repository
       uses: actions/checkout@v4
 
-    - name: Restore modified files
-      uses: actions/cache/restore@v3
-      id: restore-modified-files
-      with:
-        path: |
-          stable.json
-          beta.json
-        key: ${{ github.run_id }}-modified-files
-
-    - name: Show modified file contents
+    - name: Validate and modify JSON files
+      if: ${{ contains(needs.prepare.outputs.files, 'stable.json') || contains(needs.prepare.outputs.files, 'beta.json') }}
       run: |
-        echo "=== Final File Contents Before Upload ==="
-        for file in stable.json beta.json; do
-          if [ -f "$file" ]; then
-            echo "File: $file"
-            echo "Content:"
-            cat "$file"
-            echo "Replacements check:"
-            grep -E "os-artifacts.smart-assistant.cn|ha-cn.cn/home-assistant-cn" "$file" || echo "::error::Replacements missing in $file"
-            echo "------------------------"
+        for file in ${{ needs.prepare.outputs.files }}; do
+          if [[ "$file" == "stable.json" || "$file" == "beta.json" ]]; then
+            # Check if file exists
+            if [ -f "$file" ]; then
+              # Check if domain needs to be replaced
+              if grep -q "os-artifacts.home-assistant.io" "$file"; then
+                echo "Replacing domain in $file"
+                sed -i 's/os-artifacts.home-assistant.io/os-artifacts.home-assistant.xin/g' "$file"
+                # Verify the replacement was successful
+                if ! grep -q "os-artifacts.home-assistant.xin" "$file"; then
+                  echo "Failed to replace domain in $file"
+                  exit 1
+                fi
+                echo "Domain replacement successful in $file"
+              else
+                echo "No domain replacement needed in $file"
+              fi
+            else
+              echo "File $file not found"
+              exit 1
+            fi
           fi
         done
-
-    - name: Verify files before upload
-      run: |
-        fail=0
-        for file in ${{ needs.prepare.outputs.modified_files }}; do
-          if ! grep -q "os-artifacts.smart-assistant.cn" "$file"; then
-            echo "::error::First replacement missing in $file"
-            fail=1
-          fi
-          if ! grep -q "ha-cn.cn/home-assistant-cn" "$file"; then
-            echo "::error::Second replacement missing in $file"
-            fail=1
-          fi
-        done
-        if [ "$fail" -eq 1 ]; then
-          exit 1
-        fi
 
     - name: Setup Python version ${{ env.PYTHON_VERSION }}
       uses: actions/setup-python@v5
