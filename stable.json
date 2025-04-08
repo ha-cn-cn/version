@@ -45,7 +45,7 @@
     "odroid-xu4": "14.6",
     "generic-x86-64": "14.6",
     "generic-aarch64": "14.6",
-    "khadas-vim3": "14.6"
+    "khadas-vim3": "14.7"
   },
   "hassos-upgrade": {
     "11": "11.5",
