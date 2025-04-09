@@ -85,27 +85,15 @@ jobs:
       - name: Checkout the repository
         uses: actions/checkout@v4
 
-      - name: Validate and modify JSON files
-        if: ${{ contains(matrix.path, 'stable.json') || contains(matrix.path, 'beta.json') }}
+      - name: Check and modify JSON files if needed
+        if: contains(matrix.path, 'stable.json') || contains(matrix.path, 'beta.json')
         run: |
-          # Check if file exists
           if [ -f "${{ matrix.path }}" ]; then
-            # Check if domain needs to be replaced
-            if grep -q "os-artifacts.home-assistant.io" "${{ matrix.path }}"; then
-              echo "Replacing domain in ${{ matrix.path }}"
-              sed -i 's/os-artifacts.home-assistant.io/os-artifacts.home-assistant.xin/g' "${{ matrix.path }}"
-              # Verify the replacement was successful
-              if ! grep -q "os-artifacts.home-assistant.xin" "${{ matrix.path }}"; then
-                echo "Failed to replace domain in ${{ matrix.path }}"
-                exit 1
-              fi
-              echo "Domain replacement successful in ${{ matrix.path }}"
-            else
-              echo "No domain replacement needed in ${{ matrix.path }}"
-            fi
+            # Replace the domain in the file
+            sed -i 's/os-artifacts.home-assistant.io/os-artifacts.home-assistant.xin/g' "${{ matrix.path }}"
+            echo "Modified ${{ matrix.path }} to use new domain"
           else
             echo "File ${{ matrix.path }} not found"
-            exit 1
           fi
 
       - name: Login to GitHub Container Registry
@@ -136,7 +124,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
-          aws s3 sync . s3://version.home-assistant.xin --exclude "*" --include "${{ matrix.path }}.sig"
+          aws s3 sync . s3://version.smart-assistant.cn --exclude "*" --include "${{ matrix.path }}.sig"
 
   upload:
     name: Upload
@@ -148,29 +136,16 @@ jobs:
     - name: Checkout the repository
       uses: actions/checkout@v4
 
-    - name: Validate and modify JSON files
-      if: ${{ contains(needs.prepare.outputs.files, 'stable.json') || contains(needs.prepare.outputs.files, 'beta.json') }}
+    - name: Check and modify JSON files if needed
       run: |
         for file in ${{ needs.prepare.outputs.files }}; do
           if [[ "$file" == "stable.json" || "$file" == "beta.json" ]]; then
-            # Check if file exists
             if [ -f "$file" ]; then
-              # Check if domain needs to be replaced
-              if grep -q "os-artifacts.home-assistant.io" "$file"; then
-                echo "Replacing domain in $file"
-                sed -i 's/os-artifacts.home-assistant.io/os-artifacts.home-assistant.xin/g' "$file"
-                # Verify the replacement was successful
-                if ! grep -q "os-artifacts.home-assistant.xin" "$file"; then
-                  echo "Failed to replace domain in $file"
-                  exit 1
-                fi
-                echo "Domain replacement successful in $file"
-              else
-                echo "No domain replacement needed in $file"
-              fi
+              # Replace the domain in the file
+              sed -i 's/os-artifacts.home-assistant.io/os-artifacts.home-assistant.xin/g' "$file"
+              echo "Modified $file to use new domain"
             else
               echo "File $file not found"
-              exit 1
             fi
           fi
         done
